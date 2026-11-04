@@ -1,0 +1,53 @@
+name: Publish release to PyPI
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+rc[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+[ab][0-9]+"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.2"
+          enable-cache: false
+      - name: Build wheel and source distribution
+        run: uv build --no-sources
+      - name: Check package metadata
+        run: uvx twine check dist/*
+      - name: Smoke-test wheel
+        run: uv run --isolated --no-project --with dist/*.whl tests/smoke_test.py
+      - name: Smoke-test source distribution
+        run: uv run --isolated --no-project --with dist/*.tar.gz tests/smoke_test.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.2"
+          enable-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - name: Publish with a short-lived trusted token
+        run: uv publish --trusted-publishing always
